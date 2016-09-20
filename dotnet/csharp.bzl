@@ -128,18 +128,20 @@ def _make_nunit_launcher(ctx, depinfo, output):
 _LAUNCHER_SCRIPT = """\
 #!/bin/bash
 
+set -e
+
 if [[ -e "$0.runfiles" ]]; then
   cd $0.runfiles/{workspace}
 fi
 
 # TODO(jeremy): This is a gross and fragile hack.
 # We should be able to do better than this.
-ln -s -f {workspace}/{exe} $(basename {exe})
+ln -s -f {exe} $(basename {exe})
 for l in {libs}; do
-    ln -s -f {workspace}/$l $(basename {workspace}/$l)
+    ln -s -f $l $(basename {workspace}/$l)
 done
 
-{workspace}/{mono_exe} $(basename {exe}) "$@"
+{mono_exe} $(basename {exe}) "$@"
 """
 
 def _make_launcher(ctx, depinfo, output):
@@ -342,7 +344,7 @@ _BIN_OUTPUTS = {
 
 csharp_library = rule(
     implementation = _csc_compile_impl,
-    attrs = dict(_COMMON_ATTRS.items() + _LIB_ATTRS.items()),
+    attrs = _COMMON_ATTRS + _LIB_ATTRS,
     outputs = _LIB_OUTPUTS,
 )
 """Builds a C# .NET library and its corresponding documentation.
@@ -359,7 +361,7 @@ Args:
 
 csharp_binary = rule(
     implementation = _csc_compile_impl,
-    attrs = dict(_COMMON_ATTRS.items() + _EXE_ATTRS.items()),
+    attrs = _COMMON_ATTRS + _EXE_ATTRS,
     outputs = _BIN_OUTPUTS,
     executable = True,
 )
@@ -412,7 +414,9 @@ dll_import = rule(
   attrs = _NUGET_ATTRS,
 )
 
-def _nuget_package_impl(repository_ctx):
+def _nuget_package_impl(repository_ctx,
+                        build_file = None,
+                        build_file_content = None):
   # figure out the output_path
   package = repository_ctx.attr.package
   output_dir = repository_ctx.path("")
@@ -440,13 +444,36 @@ def _nuget_package_impl(repository_ctx):
   if result.return_code:
     fail("Nuget command failed: %s (%s)" % (result.stderr, " ".join(nuget_cmd)))
 
-  tpl_file = Label("//dotnet:NUGET_BUILD.tpl")
-  # add the BUILD file
-  repository_ctx.template(
-    "BUILD",
-    tpl_file,
-    {"%{package}": repository_ctx.name,
-     "%{output_dir}": "%s" % output_dir})
+  if build_file_content:
+    repository_ctx.file("BUILD", build_file_content)
+  elif build_file:
+    repository_ctx.symlink(repository_ctx.path(build_file), "BUILD")
+  else:
+    tpl_file = Label("//dotnet:NUGET_BUILD.tpl")
+    # add the BUILD file
+    repository_ctx.template(
+      "BUILD",
+      tpl_file,
+      {"%{package}": repository_ctx.name,
+       "%{output_dir}": "%s" % output_dir})
+
+_nuget_package_attrs = {
+  # Sources to download the nuget packages from
+  "package_sources":attr.string_list(),
+  # The name of the nuget package
+  "package":attr.string(mandatory=True),
+  # The version of the nuget package
+  "version":attr.string(mandatory=True),
+  # Reference to the mono binary
+  "mono_exe":attr.label(
+    executable=True,
+    default=Label("@mono//bin:mono"),
+  ),
+  # Reference to the nuget.exe file
+  "nuget_exe":attr.label(
+    default=Label("@nuget//:nuget.exe"),
+  ),
+}
 
 # This rule is a repository rule and is only usable in WORKSPACE files.
 # due to some limitations of repository_rules it does require you to
@@ -454,35 +481,47 @@ def _nuget_package_impl(repository_ctx):
 # in your repository as a result.
 nuget_package = repository_rule(
   implementation=_nuget_package_impl,
-  #local=False,
-  attrs={
-    # Sources to download the nuget packages from
-    "package_sources":attr.string_list(),
-    # The name of the nuget package
-    "package":attr.string(mandatory=True),
-    # The version of the nuget package
-    "version":attr.string(mandatory=True),
-    # Reference to the mono binary
-    "mono_exe":attr.label(
-      executable=True,
-      default=Label("@mono//bin:mono"),
-    ),
-    # Reference to the nuget.exe file
-    "nuget_exe":attr.label(
-      default=Label("@nuget//:nuget.exe"),
-    ),
-  })
+  attrs=_nuget_package_attrs,
+)
 """Fetches a nuget package as an external dependency.
-
-This rule is a repository rule and is only usable in WORKSPACE files.
-due to some current limitations of repository_rules it does require you to
-tell it where your nuget.exe is located. You may want to manage that binary
-in your repository as a result.
 
 Args:
   package_sources: list of sources to use for nuget package feeds.
   package: name of the nuget package.
   version: version of the nuget package (e.g. 0.1.2)
+  mono_exe: optional label to the mono executable.
+  nuget_exe: optional label to the nuget.exe file.
+"""
+
+def _new_nuget_package_impl(repository_ctx):
+  build_file = repository_ctx.attr.build_file
+  build_file_content = repository_ctx.attr.build_file_content
+  if not (build_file_content or build_file):
+    fail("build_file or build_file_content is required")
+  _nuget_package_impl(repository_ctx, build_file, build_file_content)
+
+# This rule is a repository rule and is only usable in WORKSPACE files.
+# due to some limitations of repository_rules it does require you to
+# tell it where your nuget.exe is located. You may want to manage that binary
+# in your repository as a result.
+new_nuget_package = repository_rule(
+  implementation=_new_nuget_package_impl,
+  attrs=_nuget_package_attrs + {
+    "build_file": attr.label(
+      allow_files = True,
+    ),
+    "build_file_content": attr.string(),
+  })
+"""Fetches a nuget package as an external dependency with custom BUILD content.
+
+Args:
+  package_sources: list of sources to use for nuget package feeds.
+  package: name of the nuget package.
+  version: version of the nuget package (e.g. 0.1.2)
+  mono_exe: optional label to the mono executable.
+  nuget_exe: optional label to the nuget.exe file.
+  build_file: label to the BUILD file.
+  build_file_content: content for the BUILD file.
 """
 
 csharp_autoconf = repository_rule(
