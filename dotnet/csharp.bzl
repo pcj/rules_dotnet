@@ -344,7 +344,7 @@ _BIN_OUTPUTS = {
 
 csharp_library = rule(
     implementation = _csc_compile_impl,
-    attrs = _COMMON_ATTRS + _LIB_ATTRS,
+    attrs = dict(_COMMON_ATTRS.items() + _LIB_ATTRS.items()),
     outputs = _LIB_OUTPUTS,
 )
 """Builds a C# .NET library and its corresponding documentation.
@@ -361,7 +361,7 @@ Args:
 
 csharp_binary = rule(
     implementation = _csc_compile_impl,
-    attrs = _COMMON_ATTRS + _EXE_ATTRS,
+    attrs = dict(_COMMON_ATTRS.items() + _EXE_ATTRS.items()),
     outputs = _BIN_OUTPUTS,
     executable = True,
 )
