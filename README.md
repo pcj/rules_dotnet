@@ -2,11 +2,11 @@
 
 ## Rules
 
-
 * [csharp_library](#csharp_library)
 * [csharp_binary](#csharp_library)
 * [csharp_nunit_test](#csharp_nunit_test)
 * [nuget_package](#nuget_package)
+* [new_nuget_package](#new_nuget_package)
 * [dll_import](#dll_import)
 
 __WARNING:__ Theses rules are not compatible with
@@ -99,6 +99,40 @@ nuget_package(
     version="0.2.1",
 )
 ```
+
+### new\_nuget\_package
+
+This repository rule accepts either a `BUILD` file label or
+`build_file_content` string.  Typically the build content will include
+`dll_import` rules that expose the correct set of libraries to the
+project.  For example:
+
+```python
+
+new_nuget_package(
+  name = "nuget_grpc",
+  package = "Grpc",
+  version = "1.0.0",
+  build_file_content =
+"""
+load("@io_bazel_rules_dotnet//dotnet:csharp.bzl", "dll_import")
+dll_import(
+  name = "system_interactive_async",
+  srcs = glob(["System.Interactive.Async.3.0.0/lib/net45/**/*.dll"]),
+  visibility = ["//visibility:public"],
+)
+dll_import(
+  name = "core",
+  srcs = glob(["Grpc.Core.1.0.0/lib/net45/**/*.dll"]),
+  visibility = ["//visibility:public"],
+)
+"""
+)
+```
+
+The structure of the nuget_grpc external workspace can be examined
+once downloaded and extracted via `cd $(bazel info
+output_base)/external/nuget_grpc`.
 
 ### dll\_import
 

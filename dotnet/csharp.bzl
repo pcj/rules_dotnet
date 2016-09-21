@@ -475,10 +475,6 @@ _nuget_package_attrs = {
   ),
 }
 
-# This rule is a repository rule and is only usable in WORKSPACE files.
-# due to some limitations of repository_rules it does require you to
-# tell it where your nuget.exe is located. You may want to manage that binary
-# in your repository as a result.
 nuget_package = repository_rule(
   implementation=_nuget_package_impl,
   attrs=_nuget_package_attrs,
@@ -500,10 +496,6 @@ def _new_nuget_package_impl(repository_ctx):
     fail("build_file or build_file_content is required")
   _nuget_package_impl(repository_ctx, build_file, build_file_content)
 
-# This rule is a repository rule and is only usable in WORKSPACE files.
-# due to some limitations of repository_rules it does require you to
-# tell it where your nuget.exe is located. You may want to manage that binary
-# in your repository as a result.
 new_nuget_package = repository_rule(
   implementation=_new_nuget_package_impl,
   attrs=_nuget_package_attrs + {
