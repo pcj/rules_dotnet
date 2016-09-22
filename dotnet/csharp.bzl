@@ -543,7 +543,8 @@ exports_files(["mono", "mcs"])
   repository_ctx.file("bin/BUILD", toolchain_build)
 
 def _mono_repository_impl(repository_ctx):
-  if repository_ctx.attr.use_local:
+  env_use_local = repository_ctx.os.environ.get("RULES_DOTNET_USE_LOCAL_MONO", 0) == "1"
+  if env_use_local or repository_ctx.attr.use_local
     _csharp_autoconf(repository_ctx)
   elif repository_ctx.os.name.find("mac") != -1:
     _mono_osx_repository_impl(repository_ctx)
@@ -559,8 +560,28 @@ mono_package = repository_rule(
   local = True,
 )
 
+# MONO_BUILD_FILE_CONTENT = """
+# package(default_visibility = ["//visibility:public"])
+# filegroup(
+#   name = "mono",
+#   srcs = ["bin/mono"],
+# )
+# filegroup(
+#   name = "mcs",
+#   srcs = ["bin/mcs"],
+# )
+# """
+
 def csharp_repositories(use_local_mono=False):
   """Adds the repository rules needed for using the C# rules."""
+
+  # native.new_http_archive(
+  #   name = "mono_macosx_x86",
+  #   url = "http://bazel-mirror.storage.googleapis.com/download.mono-project.com/archive/4.2.3/macos-10-x86/MonoFramework-MDK-4.2.3.4.macos10.xamarin.x86.tar.gz",
+  #   sha256 = "a7afb92d4a81f17664a040c8f36147e57a46bb3c33314b73ec737ad73608e08b",
+  #   type = "tar.gz",
+  #   build_file_content = MONO_BUILD_FILE_CONTENT
+  # )
 
   native.new_http_archive(
       name = "nunit",
