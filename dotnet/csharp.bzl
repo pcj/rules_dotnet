@@ -548,8 +548,7 @@ def _mono_repository_impl(repository_ctx):
   elif repository_ctx.os.name.find("mac") != -1:
     _mono_osx_repository_impl(repository_ctx)
   else:
-    #if nothing else works look for a local version of mono
-    _csharp_autoconf(repository_ctx)
+    fail("Unsupported operating system: %s" % repository_ctx.os.name)
 
 mono_package = repository_rule(
   implementation = _mono_repository_impl,
