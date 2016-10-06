@@ -48,10 +48,13 @@ nuget_package(
 
 The `csharp_repositories` rule fetches external dependencies, namely
 the mono repository, the nuget binary, and the nunit binary. Setting
-`use_local_mono` to `True` will use your installed mono framework
-instead of downloading one. If you are on OS X you can set
+the environment variable `RULES_DOTNET_USE_LOCAL_MONO=1` or the rule
+argument `use_local_mono` to `True` will use your installed mono
+framework instead of downloading one. If you are on OS X you can set
 `use_local_mono` to `False` and mono will be downloaded for you by
-bazel. Support for downloading mono on Linux is coming soon.
+bazel.
+
+Support for downloading mono on Linux is coming soon.
 
 ## Examples
 

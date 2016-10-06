@@ -543,7 +543,9 @@ exports_files(["mono", "mcs"])
   repository_ctx.file("bin/BUILD", toolchain_build)
 
 def _mono_repository_impl(repository_ctx):
-  if repository_ctx.attr.use_local:
+  use_local = repository_ctx.os.environ.get(
+    "RULES_DOTNET_USE_LOCAL_MONO", repository_ctx.attr.use_local)
+  if use_local:
     _csharp_autoconf(repository_ctx)
   elif repository_ctx.os.name.find("mac") != -1:
     _mono_osx_repository_impl(repository_ctx)
