@@ -302,12 +302,14 @@ _COMMON_ATTRS = {
         allow_files = True,
         single_file = True,
         executable = True,
+        cfg = "host",
     ),
     "csc": attr.label(
         default = Label("@mono//bin:mcs"),
         allow_files = True,
         single_file = True,
         executable = True,
+        cfg = "host",
     ),
 }
 
@@ -468,6 +470,7 @@ _nuget_package_attrs = {
   "mono_exe":attr.label(
     executable=True,
     default=Label("@mono//bin:mono"),
+    cfg="host",
   ),
   # Reference to the nuget.exe file
   "nuget_exe":attr.label(
