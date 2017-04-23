@@ -440,14 +440,14 @@ def _nuget_package_impl(repository_ctx,
   mono = repository_ctx.path(repository_ctx.attr.mono_exe)
   nuget = repository_ctx.path(repository_ctx.attr.nuget_exe)
 
-  # assemble our nuget command
+  # assemble our nuget command.
   nuget_cmd = [
     mono,
     "--config", "%s/../etc/mono/config" % mono.dirname,
     nuget,
     "install",
+    "-Verbosity", repository_ctx.attr.verbosity,
     "-Version", repository_ctx.attr.version,
-    #"-Verbosity", "detailed", # enable for debugging
     "-OutputDirectory", output_dir,
   ]
   # add the sources from our source list to the command
@@ -481,6 +481,11 @@ _nuget_package_attrs = {
   "package":attr.string(mandatory=True),
   # The version of the nuget package
   "version":attr.string(mandatory=True),
+  # The verbosity level
+  "verbosity": attr.string(
+    values=["normal", "quiet", "detailed"],
+    default="normal",
+  ),
   # Reference to the mono binary
   "mono_exe":attr.label(
     executable=True,
@@ -561,7 +566,6 @@ def _mono_osx_repository_impl(repository_ctx):
   # Download the package (353MB)
   repository_ctx.download(
     "https://download.mono-project.com/archive/4.8.1/macos-10-universal/MonoFramework-MDK-4.8.1.0.macos10.xamarin.universal.pkg",
-    #"http://localhost:2017/MonoFramework-MDK-4.8.1.0.macos10.xamarin.universal.pkg",
     "mono.pkg",
     "5f1ee8314e3b61e2c81fc95cae4c6610a467adc2bb1299ab44c9b4a568bc0efd")
 
