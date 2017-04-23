@@ -1,5 +1,9 @@
 # C# Rules
 
+| Bazel ≥0.3.1 |
+| :---: |
+[![Build Status](https://travis-ci.org/pcj/rules_dotnet.svg?branch=master)](https://travis-ci.org/pcj/rules_dotnet) |
+
 ## Rules
 
 * [csharp_library](#csharp_library)

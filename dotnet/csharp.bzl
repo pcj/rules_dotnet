@@ -596,7 +596,7 @@ script_dir=$(dirname $0)
 export PATH=$PATH:$script_dir
 export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:$script_dir/../../../External/pkgconfig:$script_dir/../lib/pkgconfig:$script_dir/../share/pkgconfig
 exec $script_dir/mono $MONO_OPTIONS $script_dir/../lib/mono/4.5/mcs.exe "$@"
-""", executable = True)
+""", True)
 
 
   # Finally, create the build file.
