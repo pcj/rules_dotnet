@@ -115,6 +115,14 @@ for l in {libs}; do
     fi
 done
 
+# http://stackoverflow.com/questions/14452550/how-can-i-configure-mono-to-use-the-correct-paths-to-etc-directory-when-the-pre
+# https://peteris.rocks/blog/mono-installation-on-ubuntu-server/
+export PATH="$PATH:{mono_root}/bin"
+export MONO_PATH="{mono_path}:/private/var/tmp/_bazel_pcj/0e7a1a3884ba6d0cdc1ab5a0b0c46b53/external/nunit_framework/bin/net-4.5"
+export MONO_CONFIG="{mono_root}/etc/mono/config"
+export MONO_CFG_DIR="{mono_root}/etc"
+export DYLD_LIBRARY_PATH="{mono_path}:/private/var/tmp/_bazel_pcj/0e7a1a3884ba6d0cdc1ab5a0b0c46b53/external/nunit_framework/bin/net-4.5"
+export PKG_CONFIG_PATH="{mono_root}/lib/pkgconfig:{mono_root}/share/pkgconfig"
 {mono_exe} {nunit_exe} {libs} "$@"
 """
 
@@ -122,10 +130,20 @@ def _make_nunit_launcher(ctx, depinfo, output):
   libs = ([d.short_path for d in depinfo.dlls] +
           [d.short_path for d in depinfo.transitive_dlls])
 
+  filtered_libs = []
+  for lib in libs:
+    #if not lib.endswith("nunit.testdata.dll") and not lib.endswith("nunitlite.dll") and not lib.endswith("nunit.framework.dll"):
+    if not lib.endswith("slow-nunit-tests.dll") and not lib.endswith("nunit.framework.tests.dll") and not lib.endswith("nunit.testdata.dll") and not lib.endswith("nunitlite.dll") and not lib.endswith("nunit.framework.dll"):
+      print("adding test lib %s" % lib)
+      filtered_libs.append(lib)
+
   content = _NUNIT_LAUNCHER_SCRIPT.format(
       mono_exe=ctx.file.mono.short_path,
+      mono_path=ctx.attr.mono_toolchain.mono_toolchain.path,
+      mono_root=ctx.attr.mono_toolchain.mono_toolchain.root,
       nunit_exe=ctx.files._nunit_exe[0].short_path,
-      libs=" ".join(list(set(libs))),
+      #libs=" ".join(list(set(filtered_libs))),
+      libs=" ".join([output.short_path]),
       workspace=ctx.workspace_name)
 
   ctx.file_action(output=ctx.outputs.executable, content=content)
@@ -155,6 +173,9 @@ done
 
 popd
 
+export MONO_PATH="{mono_path}"
+export DYLD_LIBRARY_PATH="{mono_path}"
+
 $RUNFILES/{mono_exe} $RUNFILES/$(basename {exe}) "$@"
 """
 
@@ -162,8 +183,15 @@ def _make_launcher(ctx, depinfo, output):
   libs = ([d.short_path for d in depinfo.dlls] +
           [d.short_path for d in depinfo.transitive_dlls])
 
+  # env = {
+  #   "MONO_PATH": ctx.attr.mono_toolchain.mono_toolchain.path,
+  #   "DYLD_LIBRARY_PATH": ctx.attr.mono_toolchain.mono_toolchain.path,
+  # }
+  # print("env: %r" % env)
+
   content = _LAUNCHER_SCRIPT.format(mono_exe=ctx.file.mono.path,
                                     workspace=ctx.workspace_name,
+                                    mono_path=ctx.attr.mono_toolchain.mono_toolchain.path,
                                     exe=output.short_path,
                                     libs=" ".join(libs))
   ctx.file_action(output=ctx.outputs.executable, content=content)
@@ -275,7 +303,6 @@ def _cs_nunit_run_impl(ctx):
                 runfiles=runfiles)
 
 def _find_and_symlink(repository_ctx, binary, env_variable):
-  #repository_ctx.file("bin/empty")
   if env_variable in repository_ctx.os.environ:
     return repository_ctx.path(repository_ctx.os.environ[env_variable])
   else:
@@ -284,14 +311,23 @@ def _find_and_symlink(repository_ctx, binary, env_variable):
       fail("Cannot find %s. Either correct your path or set the " % binary +
            "%s environment variable." % env_variable)
     repository_ctx.symlink(found_binary, "bin/%s" % binary)
+    return binary
 
 def _csharp_autoconf(repository_ctx):
-  _find_and_symlink(repository_ctx, "mono", "MONO")
+  mono_binary = _find_and_symlink(repository_ctx, "mono", "MONO")
   _find_and_symlink(repository_ctx, "mcs", "CSC")
+  path = mono_binary.split('/')
+  print("mono binary path: %s" % path)
   toolchain_build = """\
 package(default_visibility = ["//visibility:public"])
 exports_files(["mono", "mcs"])
-"""
+load("@io_bazel_rules_dotnet//dotnet:csharp.bzl", "mono_toolchain")
+mono_toolchain(
+  name = "toolchain",
+  root = "{dirname}/Library/Frameworks/Mono.framework/Versions/4.8.1",
+  path = "{dirname}/Library/Frameworks/Mono.framework/Versions/4.8.1/lib/mono/4.5",
+)
+""".format(dirname = "/".join(path[:-2]))
   repository_ctx.file("bin/BUILD", toolchain_build)
 
 _COMMON_ATTRS = {
@@ -325,6 +361,13 @@ _COMMON_ATTRS = {
         executable = True,
         cfg = "host",
     ),
+    # The mono_toolchain rule which provides the
+    # absolute path to the installed mono
+    "mono_toolchain": attr.label(
+        providers=["mono_toolchain"],
+        default=Label("@mono//bin:toolchain"),
+        cfg="host",
+    ),
 }
 
 _LIB_ATTRS = {
@@ -343,10 +386,16 @@ _EXE_ATTRS = {
 }
 
 _NUNIT_ATTRS = {
-    "_nunit_exe": attr.label(default=Label("@nunit//:nunit_exe"),
-                             single_file=True),
-    "_nunit_framework": attr.label(default=Label("@nunit//:nunit_framework")),
-    "_nunit_exe_libs": attr.label(default=Label("@nunit//:nunit_exe_libs")),
+    "_nunit_exe": attr.label(
+      default=Label("@nunit//:nunit_exe"),
+      single_file=True,
+    ),
+    "_nunit_exe_libs": attr.label(
+      default=Label("@nunit//:nunit_exe_libs"),
+    ),
+    "_nunit_framework": attr.label(
+      default=Label("@nunit_framework//:net_4_5"),
+    ),
 }
 
 _LIB_OUTPUTS = {
@@ -442,6 +491,7 @@ def _nuget_package_impl(repository_ctx,
 
   # assemble our nuget command.
   nuget_cmd = [
+    'MONO_LOG_MASK="all"',
     mono,
     "--config", "%s/../etc/mono/config" % mono.dirname,
     nuget,
@@ -457,7 +507,7 @@ def _nuget_package_impl(repository_ctx,
   # Lastly we add the nuget package name.
   nuget_cmd += [repository_ctx.attr.package]
   # execute nuget download.
-  result = repository_ctx.execute(nuget_cmd)
+  result = _execute(repository_ctx, nuget_cmd, print_stdout=True)
   if result.return_code:
     fail("Nuget command failed: %s (%s)" % (result.stderr, " ".join(nuget_cmd)))
 
@@ -548,6 +598,10 @@ csharp_autoconf = repository_rule(
 def _execute(repository_ctx, args, fail_on_error = True, print_stdout = False):
   result = repository_ctx.execute(args)
   if result.return_code and fail_on_error:
+    print("ARGS: %s" % args)
+    print("FAILURE CODE: %s" % result.return_code)
+    print("STDOUT: %s" % result.stdout)
+    print("STDERR: %s" % result.stderr)
     fail("%s failed (%s): %s" % (" ".join(args), result.return_code, result.stderr))
   if print_stdout:
     print("%s stdout: %s" % (" ".join(args), result.stdout))
@@ -555,7 +609,10 @@ def _execute(repository_ctx, args, fail_on_error = True, print_stdout = False):
 
 
 def _mono_osx_repository_impl(repository_ctx):
-  download_output = repository_ctx.path("")
+  dirname = "%s" % repository_ctx.path("")
+  if dirname.startswith("//"):
+    dirname = dirname[1:]
+
   pkgutil = repository_ctx.which("pkgutil")
   if not pkgutil:
     fail("pkgutil not found in PATH")
@@ -566,6 +623,7 @@ def _mono_osx_repository_impl(repository_ctx):
   # Download the package (353MB)
   repository_ctx.download(
     "https://download.mono-project.com/archive/4.8.1/macos-10-universal/MonoFramework-MDK-4.8.1.0.macos10.xamarin.universal.pkg",
+    #"http://localhost:2017/mono.pkg",
     "mono.pkg",
     "5f1ee8314e3b61e2c81fc95cae4c6610a467adc2bb1299ab44c9b4a568bc0efd")
 
@@ -581,36 +639,53 @@ def _mono_osx_repository_impl(repository_ctx):
   # Link Library/.../bin here.
   repository_ctx.symlink("Library/Frameworks/Mono.framework/Versions/4.8.1/bin", "bin")
 
+  # Find and replace.
+  pattern = ["Library", "Frameworks", "Mono.framework"]
+  replacement = dirname.split("/") + pattern
+  sed_expression = "s|%s|%s|g" % ("/".join([""] + pattern), "/".join(replacement))
+  find_and_replace = [
+    "find", "Library", # starting in Library directory
+    "-type", "f", # only match regular files
+
+    # "-exec", "grep", # execute grep on all matches
+    # "-I", # ignore binary files
+    # #"-l", '""',
+    # "-q", # suppress normal grep output
+    # "%s" % "/".join(pattern), # match this string
+    # "{}", # matched filename
+    # ";", # terminate grep exec (no need to escape it like \;)
+
+    # "-and", # join another find clause
+    # "-print", # print matches
+
+    "-exec", "sed", # execute sed on each matched filename
+    "-i.bak", # in-place replacement, creating file.bak
+    "-e", sed_expression,
+    "{}", # matched filename
+    ";", # terminate sed exec
+  ]
+  _execute(repository_ctx, find_and_replace, print_stdout=False)
+
   # Cleanup 704MB of disk
   _execute(repository_ctx, ["rm", "-rf", "mono/", "mono.pkg"])
 
-  # The mcs script file has inappropriate paths... Overwrite it manually.
-  # Here's the version we are about to overwrite.
-  # #!/bin/sh
-  # export PATH=$PATH:/Library/Frameworks/Mono.framework/Versions/4.8.1/bin
-  # export PKG_CONFIG_PATH=/Library/Frameworks/Mono.framework/External/pkgconfig:/Library/Frameworks/Mono.framework/Versions/4.8.1/lib/pkgconfig:/Library/Frameworks/Mono.framework/Versions/4.8.1/share/pkgconfig:$PKG_CONFIG_PATH
-  # exec /Library/Frameworks/Mono.framework/Versions/4.8.1/bin/mono $MONO_OPTIONS /Library/Frameworks/Mono.framework/Versions/4.8.1/lib/mono/4.5/mcs.exe "$@"
-
-  repository_ctx.file("bin/mcs", """#!/bin/sh
-script_dir=$(dirname $0)
-export PATH=$PATH:$script_dir
-export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:$script_dir/../../../External/pkgconfig:$script_dir/../lib/pkgconfig:$script_dir/../share/pkgconfig
-exec $script_dir/mono $MONO_OPTIONS $script_dir/../lib/mono/4.5/mcs.exe "$@"
-""", True)
-
-
   # Finally, create the build file.
-  toolchain_build = """
+  repository_ctx.file("bin/BUILD", """
 package(default_visibility = ["//visibility:public"])
 exports_files(["mono", "mcs"])
-"""
-  repository_ctx.file("bin/BUILD", toolchain_build)
+load("@io_bazel_rules_dotnet//dotnet:csharp.bzl", "mono_toolchain")
+mono_toolchain(
+  name = "toolchain",
+  root = "{dirname}/Library/Frameworks/Mono.framework/Versions/4.8.1",
+  path = "{dirname}/Library/Frameworks/Mono.framework/Versions/4.8.1/lib/mono/4.5",
+)
+""".format(dirname=dirname))
 
 
 def _mono_repository_impl(repository_ctx):
   use_local = repository_ctx.os.environ.get(
     "RULES_DOTNET_USE_LOCAL_MONO", repository_ctx.attr.use_local)
-  if use_local:
+  if use_local or repository_ctx.os.name.find("linux") != -1:
     _csharp_autoconf(repository_ctx)
   elif repository_ctx.os.name.find("mac") != -1:
     _mono_osx_repository_impl(repository_ctx)
@@ -626,18 +701,80 @@ mono_package = repository_rule(
   local = True,
 )
 
+def _mono_toolchain_impl(ctx):
+  return struct(
+    mono_toolchain = struct(
+      path = ctx.attr.path,
+      root = ctx.attr.root,
+      #pkg_config_path = ctx.attr.pkg_config_path,
+    )
+  )
+
+mono_toolchain = rule(
+  implementation = _mono_toolchain_impl,
+  attrs = {
+    "path": attr.string(mandatory = True),
+    "root": attr.string(mandatory = True),
+    #"pkg_config_path": attr.string(mandatory = True),
+  }
+)
+
 def csharp_repositories(use_local_mono=False):
   """Adds the repository rules needed for using the C# rules."""
 
+  # native.new_http_archive(
+  #     name = "nunit",
+  #     url = "http://bazel-mirror.storage.googleapis.com/github.com/nunit/nunitv2/releases/download/2.6.4/NUnit-2.6.4.zip",
+  #     sha256 = "1bd925514f31e7729ccde40a38a512c2accd86895f93465f3dfe6d0b593d7170",
+  #     type = "zip",
+  #     # This is a little weird but is necessary for the build file reference to
+  #     # work when Workspaces import this using a repository rule.
+  #     build_file = str(Label("//dotnet:nunit.BUILD")),
+  # )
+
+  # native.new_http_archive(
+  #     name = "nunit",
+  #     url = "https://github.com/nunit/nunit/archive/757888f46292ceea9273da35a9b3122a8c57c0e3.zip", # 3.6.1
+  #     sha256 = "43530d0e73d719652553b1553a24cd1286ff1ca85d49c8d3975683d77659736d",
+  #     strip_prefix = "nunit-757888f46292ceea9273da35a9b3122a8c57c0e3",
+  #     build_file = str(Label("//dotnet:nunit.BUILD")),
+  # )
+
   native.new_http_archive(
-      name = "nunit",
-      url = "http://bazel-mirror.storage.googleapis.com/github.com/nunit/nunitv2/releases/download/2.6.4/NUnit-2.6.4.zip",
-      sha256 = "1bd925514f31e7729ccde40a38a512c2accd86895f93465f3dfe6d0b593d7170",
-      type = "zip",
-      # This is a little weird but is necessary for the build file reference to
-      # work when Workspaces import this using a repository rule.
-      build_file = str(Label("//dotnet:nunit.BUILD")),
+    name = "nunit",
+    url = "https://github.com/nunit/nunit-console/releases/download/3.6.1/NUnit.Console-3.6.1.zip",
+    sha256 = "3a177506699282d5c9e720be8bab8f9c0cb925e0e78acd335fbf6798b7095648",
+    build_file = str(Label("//dotnet:nunit.BUILD")),
   )
+
+  native.new_http_archive(
+    name = "nunit_framework",
+    url = "https://github.com/nunit/nunit/releases/download/3.6.1/NUnit.Framework-3.6.1.zip",
+    sha256 = "6de9b2ca2d2866859ba02167c5e436386ac99eebb16ccd548e365e24b61041a8",
+    build_file = str(Label("//dotnet:nunit_framework.BUILD")),
+  )
+
+  # native.new_http_archive(
+  #   name = "nunit",
+  #   url = "https://github.com/nunit/nunit-console/releases/download/3.5/NUnit.Console-3.5.0.zip",
+  #   sha256 = "1316b2f6d27edc1b51a8c8ee2d93eef9105c3270cabd7bbb976a3977eba90704",
+  #   build_file = str(Label("//dotnet:nunit.BUILD")),
+  # )
+
+  # native.new_http_archive(
+  #   name = "nunit_framework",
+  #   url = "https://github.com/nunit/nunit/releases/download/3.5/NUnit-3.5.0.zip",
+  #   sha256 = "8b59a60cf3c55f78001b0a8aa09d47818206f860e929f696d3d93f33ab1adcd0",
+  #   build_file = str(Label("//dotnet:nunit_framework.BUILD")),
+  # )
+
+
+  # native.new_http_archive(
+  #   name = "nunit_console",
+  #   url = "https://github.com/nunit/nunit-console/releases/download/3.6.1/NUnit.Console-3.6.1.zip",
+  #   sha256 = "6de9b2ca2d2866859ba02167c5e436386ac99eebb16ccd548e365e24b61041a8",
+  #   build_file = str(Label("//dotnet:nunit-console.BUILD")),
+  # )
 
   native.new_http_archive(
       name = "nuget",

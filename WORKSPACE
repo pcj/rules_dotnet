@@ -7,4 +7,5 @@ nuget_package(
     name="ndesk_options", # referenced via path @ndesk_options//:dylibs
     package="NDesk.Options",
     version="0.2.1",
+    verbosity = "detailed",
 )
